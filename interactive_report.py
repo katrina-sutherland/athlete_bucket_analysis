@@ -127,7 +127,10 @@ with col1:
 with col2:
     selected_category = st.selectbox("Category", ["Junior Men", "Junior Women", "U23 Men", "Senior Men"])
 with col3:
-    athlete_map = {a["name"]: a for a in athletes}
+    # FILTER ATHLETES BASED ON SELECTED CATEGORY
+    filtered_athletes = [a for a in athletes if a['category'] == selected_category]
+    
+    athlete_map = {a["name"]: a for a in filtered_athletes}
     options = ["None"] + list(athlete_map.keys())
     selected_name = st.selectbox("Athlete", options)
     selected_athlete = athlete_map.get(selected_name)
