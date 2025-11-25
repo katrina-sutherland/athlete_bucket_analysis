@@ -15,11 +15,6 @@ st.markdown("""
         footer {visibility: hidden;}
         div[data-baseweb="select"] > div { border-color: #cccccc; }
         h1, h2, h3, p, label { color: #000000 !important; }
-        /* Sidebar styling */
-        [data-testid="stSidebar"] {
-            background-color: #f9fafb;
-            border-right: 1px solid #e5e7eb;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -42,23 +37,17 @@ def get_bucket(rank):
 
 def load_and_process_data(csv_file):
     try:
-        # Try reading with utf-8, fall back if encoding issue
-        try:
-            df = pd.read_csv(csv_file, encoding='utf-8')
-        except UnicodeDecodeError:
-            df = pd.read_csv(csv_file, encoding='latin1')
-            
+        df = pd.read_csv(csv_file)
         # Clean column names
         df.columns = df.columns.str.strip()
-        
     except FileNotFoundError:
-        return {}, [], {}
+        return {}, [], 0
 
-    # Clean category column: Title Case and Strip (e.g. " senior women " -> "Senior Women")
+    # Clean category column
     if 'category' in df.columns:
-        df['category'] = df['category'].astype(str).str.strip().str.title()
+        df['category'] = df['category'].astype(str).str.strip()
 
-    # Define Allowed Categories
+    # Allowed Categories
     ALLOWED_CATEGORIES = [
         'Junior Men', 'Junior Women',
         'U23 Men', 'U23 Women',
@@ -70,8 +59,6 @@ def load_and_process_data(csv_file):
 
     # Initialize Datasets
     datasets = {}
-    counts_summary = {cat: 0 for cat in ALLOWED_CATEGORIES} # For Debugging
-
     for cat in ALLOWED_CATEGORIES:
         is_women = 'Women' in cat
         datasets[cat] = {
@@ -87,23 +74,28 @@ def load_and_process_data(csv_file):
         }
 
     processed_athletes = []
+    total_loaded = 0
 
     # Process Rows
     for idx, row in df.iterrows():
         raw_cat = row.get('category', '')
+        dashboard_cat = None
         
-        # Strict matching against allowed list
-        if raw_cat not in ALLOWED_CATEGORIES:
+        # Find matching category (case-insensitive)
+        for allowed in ALLOWED_CATEGORIES:
+            if str(raw_cat).lower() == allowed.lower():
+                dashboard_cat = allowed
+                break
+        
+        if not dashboard_cat: 
             continue
-
-        dashboard_cat = raw_cat
 
         # Extract Results
         results = {}
         for cls in ['C1', 'K1', 'X1']:
             if cls in row:
                 val = str(row[cls]).strip()
-                if val and val != '-' and val.lower() != 'nan' and val != '':
+                if val and val != '-' and val.lower() != 'nan':
                     try:
                         results[cls] = int(float(val))
                     except ValueError:
@@ -111,12 +103,11 @@ def load_and_process_data(csv_file):
         
         if not results: continue
 
-        # Update Counts
-        counts_summary[dashboard_cat] += 1
+        total_loaded += 1
 
         # Determine Type
         count = len(results)
-        type_idx = count - 1 
+        type_idx = count - 1 # 0=Single, 1=Double, 2=Triple
         if type_idx < 0: type_idx = 0
         if type_idx > 2: type_idx = 2
         category_name = ['Single', 'Double', 'Triple'][type_idx]
@@ -157,10 +148,10 @@ def load_and_process_data(csv_file):
         else:
             data['range'] = [0, 80]
 
-    return datasets, processed_athletes, counts_summary
+    return datasets, processed_athletes, total_loaded
 
 # --- 3. LOAD DATA ---
-DATASETS, ATHLETES, COUNTS = load_and_process_data("2025_wch_buckets.csv")
+DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data("2025_wch_buckets.csv")
 
 MAIN_CATEGORIES = [
     'Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', 'Rank 10 - 12', 
@@ -178,30 +169,25 @@ def get_chart_arrays(data_dict, keys):
 
 # --- 5. APP LAYOUT ---
 
-# -- SIDEBAR DATA INSPECTOR --
-with st.sidebar:
-    st.header("Data Inspector")
-    st.markdown("Check below to ensure all data is loaded correctly from the CSV.")
-    
-    total_loaded = sum(COUNTS.values())
-    st.metric("Total Athletes", total_loaded)
-    
-    st.subheader("Count per Category")
-    df_counts = pd.DataFrame.from_dict(COUNTS, orient='index', columns=['Count'])
-    st.dataframe(df_counts, use_container_width=True)
-    
-    if total_loaded == 0:
-        st.error("No data loaded. Is '2025_wch_buckets.csv' in the folder?")
-
 st.title("Athlete Bucket Analysis")
+
+if TOTAL_LOADED == 0:
+    st.warning("No data loaded. Ensure '2025_wch_buckets.csv' is in the directory.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
     selected_event = st.selectbox("Event", ["2025 World Championships", "2024 World Championships", "2023 World Cup"])
 with col2:
-    # Filter only categories that have data, or show all standard ones
-    available_cats = sorted(list(DATASETS.keys()))
-    selected_category = st.selectbox("Category", available_cats)
+    if DATASETS:
+        order = ["Junior Men", "Junior Women", "U23 Men", "U23 Women", "Senior Men", "Senior Women"]
+        available = [c for c in order if c in DATASETS]
+        others = [c for c in DATASETS.keys() if c not in order]
+        category_options = available + sorted(others)
+    else:
+        category_options = ["No Data"]
+    
+    selected_category = st.selectbox("Category", category_options)
+
 with col3:
     filtered_athletes = sorted([a for a in ATHLETES if a['category'] == selected_category], key=lambda x: x['name'])
     athlete_map = {a["name"]: a for a in filtered_athletes}
@@ -212,10 +198,10 @@ with col3:
 # --- 6. DATA SELECTION ---
 
 if not DATASETS or selected_category not in DATASETS:
-    st.info("Waiting for data...")
+    st.info("Please upload data or select a valid category.")
     st.stop()
 
-dataset = DATASETS.get(selected_category)
+dataset = DATASETS[selected_category]
 active_main = dataset["main"]
 active_outlier = dataset["outlier"]
 active_colors = dataset["colors"]
@@ -248,13 +234,13 @@ if selected_athlete:
     color_map = {0: c_s, 1: c_d, 2: c_t}
     text_color = color_map.get(cat_idx, "#000000")
     
-    # Default shifts for Main Chart (Rank 1-30)
-    # Left for Single, Center for Double, Right for Triple
+    # Default shifts for Main Chart
     x_shift_val_main = {0: -20, 1: 0, 2: 20}.get(cat_idx, 0)
     
-    # Shifts for Outlier Chart (Rank 31+)
-    # Often needs wider spacing as the single "Rank 31+" bar group can be wider or centered differently
-    x_shift_val_outlier = {0: -30, 1: 0, 2: 30}.get(cat_idx, 0) 
+    # REFINED SHIFTS FOR OUTLIER CHART
+    # Since the outlier chart has only one group, the bars might be rendered differently.
+    # I am increasing the spacing to push the arrow further left/right.
+    x_shift_val_outlier = {0: -40, 1: 0, 2: 40}.get(cat_idx, 0) 
 
     style_config = dict(
         bgcolor="#ffffff", bordercolor="#e0e0e0", borderwidth=1,
@@ -268,8 +254,8 @@ if selected_athlete:
         is_outlier = rank_group in OUTLIER_CATEGORIES
         target_row, target_col = (1, 2) if is_outlier else (1, 1)
         
-        # Use specific shift value based on chart type
-        current_x_shift = x_shift_val_outlier if is_outlier else x_shift_val_main
+        # Apply specific shift based on chart type
+        current_shift = x_shift_val_outlier if is_outlier else x_shift_val_main
         
         try:
             data_source = active_outlier if is_outlier else active_main
@@ -282,7 +268,7 @@ if selected_athlete:
                      f"<span style='font-size:10px; font-weight:bold; color:{text_color}'>{selected_athlete['category_name'].upper()}</span><br><br>"
                      f"{result_text}",
                 showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
-                xshift=current_x_shift, ax=0, ay=-80, align="left",
+                xshift=current_shift, ax=0, ay=-80, align="left",
                 row=target_row, col=target_col, **style_config
             )
         except KeyError:
@@ -314,7 +300,7 @@ fig.update_yaxes(title_text="Athletes Per Rank Category", title_standoff=40, ran
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=1, **axis_config)
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=2, **axis_config)
 
-# Y-Axis (Right) - Dynamic Range
+# Y-Axis (Right) - Fixed Range
 fig.update_yaxes(range=outlier_range, dtick=10, row=1, col=2, side='left', **axis_config)
 
 # Add Centered X-Axis Title
