@@ -94,7 +94,6 @@ def load_and_process_data(csv_file):
         
         # Strict matching against allowed list
         if raw_cat not in ALLOWED_CATEGORIES:
-            # Optional: Try to fuzzy match or handle "Snr" maps here if needed
             continue
 
         dashboard_cat = raw_cat
@@ -248,8 +247,14 @@ if selected_athlete:
     cat_idx = selected_athlete['category_index']
     color_map = {0: c_s, 1: c_d, 2: c_t}
     text_color = color_map.get(cat_idx, "#000000")
-    x_shift_map = {0: -20, 1: 0, 2: 20} 
-    x_shift_val = x_shift_map.get(cat_idx, 0)
+    
+    # Default shifts for Main Chart (Rank 1-30)
+    # Left for Single, Center for Double, Right for Triple
+    x_shift_val_main = {0: -20, 1: 0, 2: 20}.get(cat_idx, 0)
+    
+    # Shifts for Outlier Chart (Rank 31+)
+    # Often needs wider spacing as the single "Rank 31+" bar group can be wider or centered differently
+    x_shift_val_outlier = {0: -30, 1: 0, 2: 30}.get(cat_idx, 0) 
 
     style_config = dict(
         bgcolor="#ffffff", bordercolor="#e0e0e0", borderwidth=1,
@@ -263,6 +268,9 @@ if selected_athlete:
         is_outlier = rank_group in OUTLIER_CATEGORIES
         target_row, target_col = (1, 2) if is_outlier else (1, 1)
         
+        # Use specific shift value based on chart type
+        current_x_shift = x_shift_val_outlier if is_outlier else x_shift_val_main
+        
         try:
             data_source = active_outlier if is_outlier else active_main
             bar_height = data_source[rank_group][cat_idx]
@@ -274,7 +282,7 @@ if selected_athlete:
                      f"<span style='font-size:10px; font-weight:bold; color:{text_color}'>{selected_athlete['category_name'].upper()}</span><br><br>"
                      f"{result_text}",
                 showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
-                xshift=x_shift_val, ax=0, ay=-80, align="left",
+                xshift=current_x_shift, ax=0, ay=-80, align="left",
                 row=target_row, col=target_col, **style_config
             )
         except KeyError:
