@@ -70,7 +70,9 @@ def load_and_process_data(csv_file):
             },
             "outlier": {'Rank 31 +': [0, 0, 0]},
             "colors": COLORS_WOMEN if is_women else COLORS_MEN,
-            "range": [0, 10]
+            "range": [0, 10],
+            "top_performers": {'Rank 1 - 3': {'Single': [], 'Double': [], 'Triple': []}, 
+                               'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []}} 
         }
 
     processed_athletes = []
@@ -81,7 +83,6 @@ def load_and_process_data(csv_file):
         raw_cat = row.get('category', '')
         dashboard_cat = None
         
-        # Find matching category (case-insensitive)
         for allowed in ALLOWED_CATEGORIES:
             if str(raw_cat).lower() == allowed.lower():
                 dashboard_cat = allowed
@@ -107,7 +108,7 @@ def load_and_process_data(csv_file):
 
         # Determine Type
         count = len(results)
-        type_idx = count - 1 # 0=Single, 1=Double, 2=Triple
+        type_idx = count - 1 
         if type_idx < 0: type_idx = 0
         if type_idx > 2: type_idx = 2
         category_name = ['Single', 'Double', 'Triple'][type_idx]
@@ -127,6 +128,11 @@ def load_and_process_data(csv_file):
                 if bucket in target:
                     target[bucket][type_idx] += 1
                 seen_buckets.add(bucket)
+                
+                if bucket in ['Rank 1 - 3', 'Rank 4 - 6']:
+                    entry_text = f"{row.get('athlete', 'Unknown')}"
+                    if entry_text not in datasets[dashboard_cat]['top_performers'][bucket][category_name]:
+                        datasets[dashboard_cat]['top_performers'][bucket][category_name].append(entry_text)
 
         highlights = []
         for b, texts in bucket_text_map.items():
@@ -192,7 +198,7 @@ with col3:
     filtered_athletes = sorted([a for a in ATHLETES if a['category'] == selected_category], key=lambda x: x['name'])
     athlete_map = {a["name"]: a for a in filtered_athletes}
     options = ["None"] + list(athlete_map.keys())
-    selected_name = st.selectbox("Athlete", options)
+    selected_name = st.selectbox("Athlete", options, index=0) 
     selected_athlete = athlete_map.get(selected_name)
 
 # --- 6. DATA SELECTION ---
@@ -206,6 +212,7 @@ active_main = dataset["main"]
 active_outlier = dataset["outlier"]
 active_colors = dataset["colors"]
 outlier_range = dataset["range"]
+top_performers = dataset["top_performers"]
 
 st.markdown(f"<h2 style='text-align: center; text-decoration: underline; margin: 20px 0; color: black;'>{selected_category} Results {selected_event}</h2>", unsafe_allow_html=True)
 
@@ -217,29 +224,76 @@ c_s, c_d, c_t = active_colors
 
 # Main Traces
 s1, d1, t1 = get_chart_arrays(active_main, MAIN_CATEGORIES)
-fig.add_trace(go.Bar(x=MAIN_CATEGORIES, y=s1, name='Single', marker_color=c_s, opacity=0.8), row=1, col=1)
-fig.add_trace(go.Bar(x=MAIN_CATEGORIES, y=d1, name='Double', marker_color=c_d, opacity=0.8), row=1, col=1)
-fig.add_trace(go.Bar(x=MAIN_CATEGORIES, y=t1, name='Triple', marker_color=c_t, opacity=0.8), row=1, col=1)
+
+# Custom Hover Logic for Top Ranks
+hover_templates_s = []
+hover_templates_d = []
+hover_templates_t = []
+
+if not selected_athlete:
+    for cat in MAIN_CATEGORIES:
+        if cat in ['Rank 1 - 3', 'Rank 4 - 6']:
+            # Single
+            perf_s = top_performers.get(cat, {}).get('Single', [])
+            if perf_s:
+                disp_s = "<br>".join(perf_s[:15]) + ("<br>..." if len(perf_s)>15 else "")
+                # Format hover text: Category (colored) at TOP, then Names (black)
+                hover_text = f"<span style='color:{c_s}; font-weight:bold; font-size:14px'>SINGLE</span><br><br><b>{cat}:</b><br><span style='color:black'>{disp_s}</span><extra></extra>"
+                hover_templates_s.append(hover_text)
+            else:
+                hover_templates_s.append(None)
+            
+            # Double
+            perf_d = top_performers.get(cat, {}).get('Double', [])
+            if perf_d:
+                disp_d = "<br>".join(perf_d[:15]) + ("<br>..." if len(perf_d)>15 else "")
+                hover_text = f"<span style='color:{c_d}; font-weight:bold; font-size:14px'>DOUBLE</span><br><br><b>{cat}:</b><br><span style='color:black'>{disp_d}</span><extra></extra>"
+                hover_templates_d.append(hover_text)
+            else:
+                hover_templates_d.append(None)
+
+            # Triple
+            perf_t = top_performers.get(cat, {}).get('Triple', [])
+            if perf_t:
+                disp_t = "<br>".join(perf_t[:15]) + ("<br>..." if len(perf_t)>15 else "")
+                hover_text = f"<span style='color:{c_t}; font-weight:bold; font-size:14px'>TRIPLE</span><br><br><b>{cat}:</b><br><span style='color:black'>{disp_t}</span><extra></extra>"
+                hover_templates_t.append(hover_text)
+            else:
+                hover_templates_t.append(None)
+        else:
+            hover_templates_s.append(None)
+            hover_templates_d.append(None)
+            hover_templates_t.append(None)
+else:
+    hover_templates_s = [None] * len(MAIN_CATEGORIES)
+    hover_templates_d = [None] * len(MAIN_CATEGORIES)
+    hover_templates_t = [None] * len(MAIN_CATEGORIES)
+
+# Add Traces
+fig.add_trace(go.Bar(x=MAIN_CATEGORIES, y=s1, name='Single', marker_color=c_s, opacity=0.8, hovertemplate=hover_templates_s, hoverlabel=dict(bgcolor="white")), row=1, col=1)
+fig.add_trace(go.Bar(x=MAIN_CATEGORIES, y=d1, name='Double', marker_color=c_d, opacity=0.8, hovertemplate=hover_templates_d, hoverlabel=dict(bgcolor="white")), row=1, col=1)
+fig.add_trace(go.Bar(x=MAIN_CATEGORIES, y=t1, name='Triple', marker_color=c_t, opacity=0.8, hovertemplate=hover_templates_t, hoverlabel=dict(bgcolor="white")), row=1, col=1)
 
 # Outlier Traces
 s2, d2, t2 = get_chart_arrays(active_outlier, OUTLIER_CATEGORIES)
-fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=s2, name='Single', marker_color=c_s, showlegend=False, opacity=0.8), row=1, col=2)
-fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=d2, name='Double', marker_color=c_d, showlegend=False, opacity=0.8), row=1, col=2)
-fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=t2, name='Triple', marker_color=c_t, showlegend=False, opacity=0.8), row=1, col=2)
+fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=s2, name='Single', marker_color=c_s, showlegend=False, opacity=0.8, hoverinfo='none'), row=1, col=2)
+fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=d2, name='Double', marker_color=c_d, showlegend=False, opacity=0.8, hoverinfo='none'), row=1, col=2)
+fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=t2, name='Triple', marker_color=c_t, showlegend=False, opacity=0.8, hoverinfo='none'), row=1, col=2)
 
-# --- 8. HOVER LOGIC ---
+# --- 8. ATHLETE SELECTION HOVER LOGIC ---
 
 if selected_athlete:
-    cat_idx = selected_athlete['category_index']
+    cat_idx = selected_athlete['category_index'] # 0=Single, 1=Double, 2=Triple
+    
+    # Define Colors for Text
     color_map = {0: c_s, 1: c_d, 2: c_t}
-    text_color = color_map.get(cat_idx, "#000000")
+    # Default to black, but we will use this to color the bucket name
+    bucket_color = color_map.get(cat_idx, "#000000")
     
-    # Default shifts for Main Chart
+    # Calculate Shifts to align hover over SPECIFIC column
+    # Main Chart: Single(-20), Double(0), Triple(20)
+    # Outlier Chart: Single(-30), Double(0), Triple(30) (Wider bars)
     x_shift_val_main = {0: -20, 1: 0, 2: 20}.get(cat_idx, 0)
-    
-    # REFINED SHIFTS FOR OUTLIER CHART
-    # Since the outlier chart has only one group, the bars might be rendered differently.
-    # I am increasing the spacing to push the arrow further left/right.
     x_shift_val_outlier = {0: -40, 1: 0, 2: 40}.get(cat_idx, 0) 
 
     style_config = dict(
@@ -252,21 +306,25 @@ if selected_athlete:
         result_text = highlight['text']
         
         is_outlier = rank_group in OUTLIER_CATEGORIES
-        target_row, target_col = (1, 2) if is_outlier else (1, 1)
         
-        # Apply specific shift based on chart type
+        # IMPORTANT: Only show annotation on the correct COLUMN trace
+        target_row, target_col = (1, 2) if is_outlier else (1, 1)
         current_shift = x_shift_val_outlier if is_outlier else x_shift_val_main
         
         try:
             data_source = active_outlier if is_outlier else active_main
             bar_height = data_source[rank_group][cat_idx]
 
+            # UPPERCASE Bucket Name + Color Matching
+            bucket_name = selected_athlete['category_name'].upper()
+
             fig.add_annotation(
                 x=rank_group, y=bar_height,
-                text=f"<b>{selected_athlete['name']}</b><br>"
-                     f"<span style='font-size:10px; color:#555'>{rank_group} • </span>"
-                     f"<span style='font-size:10px; font-weight:bold; color:{text_color}'>{selected_athlete['category_name'].upper()}</span><br><br>"
-                     f"{result_text}",
+                # Reordered: BUCKET (Colored) -> Athlete Name (Black) -> Rank Group (Gray) -> Results (Black)
+                text=f"<span style='font-size:12px; font-weight:bold; color:{bucket_color}'>{bucket_name}</span><br>"
+                     f"<b><span style='color:black'>{selected_athlete['name']}</span></b><br>"
+                     f"<span style='font-size:10px; color:#555'>{rank_group}</span><br><br>"
+                     f"<span style='color:black'>{result_text}</span>",
                 showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
                 xshift=current_shift, ax=0, ay=-80, align="left",
                 row=target_row, col=target_col, **style_config
@@ -296,7 +354,7 @@ axis_config = dict(
 # Y-Axis (Left)
 fig.update_yaxes(title_text="Athletes Per Rank Category", title_standoff=40, range=[0, 9.5], dtick=1, row=1, col=1, **axis_config)
 
-# X-Axes (No individual titles)
+# X-Axes
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=1, **axis_config)
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=2, **axis_config)
 
