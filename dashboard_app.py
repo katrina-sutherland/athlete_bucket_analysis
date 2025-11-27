@@ -237,8 +237,8 @@ if not selected_athlete:
             perf_s = top_performers.get(cat, {}).get('Single', [])
             if perf_s:
                 disp_s = "<br>".join(perf_s[:15]) + ("<br>..." if len(perf_s)>15 else "")
-                # Format hover text: Category (colored) at TOP, then Names (black)
-                hover_text = f"<span style='color:{c_s}; font-weight:bold; font-size:14px'>SINGLE</span><br><br><b>{cat}:</b><br><span style='color:black'>{disp_s}</span><extra></extra>"
+                # Format: BOLD BLACK Title, colored category label
+                hover_text = f"<span style='color:{c_s}; font-weight:bold; font-size:14px'>SINGLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_s}</span><extra></extra>"
                 hover_templates_s.append(hover_text)
             else:
                 hover_templates_s.append(None)
@@ -247,7 +247,7 @@ if not selected_athlete:
             perf_d = top_performers.get(cat, {}).get('Double', [])
             if perf_d:
                 disp_d = "<br>".join(perf_d[:15]) + ("<br>..." if len(perf_d)>15 else "")
-                hover_text = f"<span style='color:{c_d}; font-weight:bold; font-size:14px'>DOUBLE</span><br><br><b>{cat}:</b><br><span style='color:black'>{disp_d}</span><extra></extra>"
+                hover_text = f"<span style='color:{c_d}; font-weight:bold; font-size:14px'>DOUBLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_d}</span><extra></extra>"
                 hover_templates_d.append(hover_text)
             else:
                 hover_templates_d.append(None)
@@ -256,7 +256,7 @@ if not selected_athlete:
             perf_t = top_performers.get(cat, {}).get('Triple', [])
             if perf_t:
                 disp_t = "<br>".join(perf_t[:15]) + ("<br>..." if len(perf_t)>15 else "")
-                hover_text = f"<span style='color:{c_t}; font-weight:bold; font-size:14px'>TRIPLE</span><br><br><b>{cat}:</b><br><span style='color:black'>{disp_t}</span><extra></extra>"
+                hover_text = f"<span style='color:{c_t}; font-weight:bold; font-size:14px'>TRIPLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_t}</span><extra></extra>"
                 hover_templates_t.append(hover_text)
             else:
                 hover_templates_t.append(None)
@@ -288,7 +288,7 @@ if selected_athlete:
     # Define Colors for Text
     color_map = {0: c_s, 1: c_d, 2: c_t}
     # Default to black, but we will use this to color the bucket name
-    bucket_color = color_map.get(cat_idx, "#000000")
+    text_color = color_map.get(cat_idx, "#000000")
     
     # Calculate Shifts to align hover over SPECIFIC column
     # Main Chart: Single(-20), Double(0), Triple(20)
@@ -321,7 +321,7 @@ if selected_athlete:
             fig.add_annotation(
                 x=rank_group, y=bar_height,
                 # Reordered: BUCKET (Colored) -> Athlete Name (Black) -> Rank Group (Gray) -> Results (Black)
-                text=f"<span style='font-size:12px; font-weight:bold; color:{bucket_color}'>{bucket_name}</span><br>"
+                text=f"<span style='font-size:12px; font-weight:bold; color:{bucket_name}'>{bucket_name}</span><br>"
                      f"<b><span style='color:black'>{selected_athlete['name']}</span></b><br>"
                      f"<span style='font-size:10px; color:#555'>{rank_group}</span><br><br>"
                      f"<span style='color:black'>{result_text}</span>",
