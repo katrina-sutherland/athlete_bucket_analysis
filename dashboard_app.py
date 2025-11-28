@@ -37,9 +37,17 @@ def get_bucket(rank):
 
 def load_and_process_data(csv_file):
     try:
-        df = pd.read_csv(csv_file)
-        # Clean column names
-        df.columns = df.columns.str.strip()
+        # Use utf-8-sig to handle potential Byte Order Mark (BOM) from Excel
+        df = pd.read_csv(csv_file, encoding='utf-8-sig')
+        # Standardize column names: lowercase and strip whitespace
+        df.columns = df.columns.str.strip().str.lower()
+    except UnicodeDecodeError:
+        # Fallback if utf-8 fails
+        try:
+            df = pd.read_csv(csv_file, encoding='latin1')
+            df.columns = df.columns.str.strip().str.lower()
+        except:
+            return pd.DataFrame(), {}, [], 0
     except FileNotFoundError:
         return pd.DataFrame(), {}, [], 0
 
@@ -67,6 +75,7 @@ def load_and_process_data(csv_file):
 
     # Process Rows
     for idx, row in df.iterrows():
+        # Keys are now lowercase due to column normalization
         raw_cat = row.get('category', '')
         season = row.get('season', 'Unknown')
         competition = row.get('competition', 'Unknown')
@@ -99,14 +108,14 @@ def load_and_process_data(csv_file):
                                    'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []}}
             }
 
-        # Extract Results
+        # Extract Results - check lowercase columns
         results = {}
-        for cls in ['C1', 'K1', 'X1']:
+        for cls in ['c1', 'k1', 'x1']:
             if cls in row:
                 val = str(row[cls]).strip()
                 if val and val != '-' and val.lower() != 'nan':
                     try:
-                        results[cls] = int(float(val))
+                        results[cls.upper()] = int(float(val))
                     except ValueError:
                         pass
         
@@ -268,11 +277,39 @@ hover_templates_d = []
 hover_templates_t = []
 
 if not selected_athlete:
-    # Logic for when no athlete is selected (though current logic forces selection)
-    # Keeping this in case you revert to optional athlete selection later
-    pass 
+    for cat in MAIN_CATEGORIES:
+        if cat in ['Rank 1 - 3', 'Rank 4 - 6']:
+            # Single
+            perf_s = top_performers.get(cat, {}).get('Single', [])
+            if perf_s:
+                disp_s = "<br>".join(perf_s[:15]) + ("<br>..." if len(perf_s)>15 else "")
+                hover_text = f"<span style='color:{c_s}; font-weight:bold; font-size:14px'>SINGLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_s}</span><extra></extra>"
+                hover_templates_s.append(hover_text)
+            else:
+                hover_templates_s.append(None)
+            
+            # Double
+            perf_d = top_performers.get(cat, {}).get('Double', [])
+            if perf_d:
+                disp_d = "<br>".join(perf_d[:15]) + ("<br>..." if len(perf_d)>15 else "")
+                hover_text = f"<span style='color:{c_d}; font-weight:bold; font-size:14px'>DOUBLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_d}</span><extra></extra>"
+                hover_templates_d.append(hover_text)
+            else:
+                hover_templates_d.append(None)
+
+            # Triple
+            perf_t = top_performers.get(cat, {}).get('Triple', [])
+            if perf_t:
+                disp_t = "<br>".join(perf_t[:15]) + ("<br>..." if len(perf_t)>15 else "")
+                hover_text = f"<span style='color:{c_t}; font-weight:bold; font-size:14px'>TRIPLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_t}</span><extra></extra>"
+                hover_templates_t.append(hover_text)
+            else:
+                hover_templates_t.append(None)
+        else:
+            hover_templates_s.append(None)
+            hover_templates_d.append(None)
+            hover_templates_t.append(None)
 else:
-    # If athlete IS selected (which is now mandatory), disable default hover
     hover_templates_s = [None] * len(MAIN_CATEGORIES)
     hover_templates_d = [None] * len(MAIN_CATEGORIES)
     hover_templates_t = [None] * len(MAIN_CATEGORIES)
