@@ -52,11 +52,12 @@ def load_and_process_data(csv_file):
         return pd.DataFrame(), {}, [], 0
 
     # Clean string columns
+    # Expected columns in new CSV: season, competition, category, athlete, c1, k1, x1
     for col in ['season', 'competition', 'category', 'athlete']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
 
-    # Define Allowed Categories
+    # Define Allowed Categories (for color mapping and y-axis logic)
     ALLOWED_CATEGORIES = [
         'Junior Men', 'Junior Women',
         'U23 Men', 'U23 Women',
@@ -81,7 +82,7 @@ def load_and_process_data(csv_file):
         competition = row.get('competition', 'Unknown')
         athlete_name = row.get('athlete', f'Athlete {idx}')
 
-        # Match CSV category to allowed list
+        # Match CSV category to allowed list (Case Insensitive Match)
         dashboard_cat = None
         for allowed in ALLOWED_CATEGORIES:
             if str(raw_cat).lower() == allowed.lower():
@@ -170,7 +171,8 @@ def load_and_process_data(csv_file):
     return df, datasets, processed_athletes, total_loaded
 
 # --- 3. LOAD DATA ---
-RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data("2025_wch_buckets.csv")
+# Using the NEW CSV FILE NAME
+RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data("world_championship_bucket_data.csv")
 
 MAIN_CATEGORIES = [
     'Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', 'Rank 10 - 12', 
@@ -191,7 +193,7 @@ def get_chart_arrays(data_dict, keys):
 st.title("Athlete Bucket Analysis")
 
 if TOTAL_LOADED == 0:
-    st.warning("No data loaded. Ensure '2025_wch_buckets.csv' is in the directory.")
+    st.warning("No data loaded. Ensure 'world_championship_bucket_data.csv' is in the directory.")
 
 # --- FILTERS ROW 1: Season & Competition ---
 col_season, col_comp, col_cat, col_ath = st.columns(4)
