@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import math
+import os
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(layout="wide", page_title="Athlete Bucket Analysis")
@@ -35,29 +36,34 @@ def get_bucket(rank):
     except (ValueError, TypeError):
         return None
 
-def load_and_process_data(csv_file):
-    try:
-        # Use utf-8-sig to handle potential Byte Order Mark (BOM) from Excel
-        df = pd.read_csv(csv_file, encoding='utf-8-sig')
-        # Standardize column names: lowercase and strip whitespace
-        df.columns = df.columns.str.strip().str.lower()
-    except UnicodeDecodeError:
-        # Fallback if utf-8 fails
-        try:
-            df = pd.read_csv(csv_file, encoding='latin1')
-            df.columns = df.columns.str.strip().str.lower()
-        except:
-            return pd.DataFrame(), {}, [], 0
-    except FileNotFoundError:
+@st.cache_data
+def load_and_process_data(csv_filename):
+    # Check if file exists
+    if not os.path.exists(csv_filename):
         return pd.DataFrame(), {}, [], 0
 
+    df = None
+    # Try multiple encodings
+    for encoding in ['utf-8-sig', 'utf-8', 'latin1', 'cp1252']:
+        try:
+            df = pd.read_csv(csv_filename, encoding=encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    
+    if df is None:
+        st.error(f"Could not read {csv_filename}. Please check file encoding.")
+        return pd.DataFrame(), {}, [], 0
+
+    # Normalize column names
+    df.columns = df.columns.str.strip().str.lower()
+
     # Clean string columns
-    # Expected columns in new CSV: season, competition, category, athlete, c1, k1, x1
     for col in ['season', 'competition', 'category', 'athlete']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
 
-    # Define Allowed Categories (for color mapping and y-axis logic)
+    # Define Allowed Categories
     ALLOWED_CATEGORIES = [
         'Junior Men', 'Junior Women',
         'U23 Men', 'U23 Women',
@@ -68,7 +74,7 @@ def load_and_process_data(csv_file):
     COLORS_WOMEN = ['#4a144d', '#ce73ce', '#f2d4f2'] # Dark Purple, Orchid, Light Pink
 
     # Initialize Datasets Structure
-    # Structure: { (Season, Competition, Category): { 'main': ..., 'outlier': ..., 'colors': ..., 'range': ..., 'top_performers': ... } }
+    # Key: (Season, Competition, Category)
     datasets = {}
     
     processed_athletes = []
@@ -76,13 +82,13 @@ def load_and_process_data(csv_file):
 
     # Process Rows
     for idx, row in df.iterrows():
-        # Keys are now lowercase due to column normalization
+        # Get core fields
         raw_cat = row.get('category', '')
         season = row.get('season', 'Unknown')
         competition = row.get('competition', 'Unknown')
         athlete_name = row.get('athlete', f'Athlete {idx}')
 
-        # Match CSV category to allowed list (Case Insensitive Match)
+        # Strict Category Matching (Case Insensitive)
         dashboard_cat = None
         for allowed in ALLOWED_CATEGORIES:
             if str(raw_cat).lower() == allowed.lower():
@@ -109,7 +115,7 @@ def load_and_process_data(csv_file):
                                    'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []}}
             }
 
-        # Extract Results - check lowercase columns
+        # Extract Results
         results = {}
         for cls in ['c1', 'k1', 'x1']:
             if cls in row:
@@ -171,7 +177,7 @@ def load_and_process_data(csv_file):
     return df, datasets, processed_athletes, total_loaded
 
 # --- 3. LOAD DATA ---
-# Using the NEW CSV FILE NAME
+# Ensure correct filename
 RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data("world_championship_bucket_data.csv")
 
 MAIN_CATEGORIES = [
@@ -193,14 +199,15 @@ def get_chart_arrays(data_dict, keys):
 st.title("Athlete Bucket Analysis")
 
 if TOTAL_LOADED == 0:
-    st.warning("No data loaded. Ensure 'world_championship_bucket_data.csv' is in the directory.")
+    st.error("No data loaded. Please ensure 'world_championship_bucket_data.csv' is in the same directory as this script.")
+    st.stop()
 
 # --- FILTERS ROW 1: Season & Competition ---
 col_season, col_comp, col_cat, col_ath = st.columns(4)
 
 with col_season:
     # Get unique seasons sorted
-    seasons = sorted(list(set(k[0] for k in DATASETS.keys()))) if DATASETS else []
+    seasons = sorted(list(set(k[0] for k in DATASETS.keys())))
     selected_season = st.selectbox("Season", seasons, index=None, placeholder="Select Season")
 
 with col_comp:
@@ -252,7 +259,7 @@ if not (selected_season and selected_competition and selected_category and selec
 current_key = (selected_season, selected_competition, selected_category)
 
 if current_key not in DATASETS:
-    st.info("No data available for this selection.")
+    st.info("No data available for this specific combination.")
     st.stop()
 
 dataset = DATASETS[current_key]
