@@ -8,7 +8,6 @@ import os
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(layout="wide", page_title="Athlete Bucket Analysis")
 
-# Force White Background, Remove Whitespace, Style Selectboxes
 st.markdown("""
     <style>
         .stApp { background-color: #ffffff; color: #000000; }
@@ -28,7 +27,6 @@ def get_bucket(rank):
         if r >= 31:
             return 'Rank 31 +'
         
-        # Calculate bucket group (e.g., 1-3, 4-6)
         group_idx = (r - 1) // 3
         start = group_idx * 3 + 1
         end = start + 2
@@ -36,34 +34,23 @@ def get_bucket(rank):
     except (ValueError, TypeError):
         return None
 
-@st.cache_data
-def load_and_process_data(csv_filename):
-    # Check if file exists
-    if not os.path.exists(csv_filename):
-        return pd.DataFrame(), {}, [], 0
-
-    df = None
-    # Try multiple encodings
-    for encoding in ['utf-8-sig', 'utf-8', 'latin1', 'cp1252']:
+def load_and_process_data(csv_file):
+    try:
+        df = pd.read_csv(csv_file, encoding='utf-8-sig')
+        df.columns = df.columns.str.strip().str.lower()
+    except UnicodeDecodeError:
         try:
-            df = pd.read_csv(csv_filename, encoding=encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-    
-    if df is None:
-        st.error(f"Could not read {csv_filename}. Please check file encoding.")
+            df = pd.read_csv(csv_file, encoding='latin1')
+            df.columns = df.columns.str.strip().str.lower()
+        except:
+            return pd.DataFrame(), {}, [], 0
+    except FileNotFoundError:
         return pd.DataFrame(), {}, [], 0
 
-    # Normalize column names
-    df.columns = df.columns.str.strip().str.lower()
-
-    # Clean string columns
     for col in ['season', 'competition', 'category', 'athlete']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
 
-    # Define Allowed Categories
     ALLOWED_CATEGORIES = [
         'Junior Men', 'Junior Women',
         'U23 Men', 'U23 Women',
@@ -73,22 +60,16 @@ def load_and_process_data(csv_filename):
     COLORS_MEN = ['#475569', '#3b82f6', '#7dd3fc']   # Slate, Blue, Sky
     COLORS_WOMEN = ['#4a144d', '#ce73ce', '#f2d4f2'] # Dark Purple, Orchid, Light Pink
 
-    # Initialize Datasets Structure
-    # Key: (Season, Competition, Category)
     datasets = {}
-    
     processed_athletes = []
     total_loaded = 0
 
-    # Process Rows
     for idx, row in df.iterrows():
-        # Get core fields
         raw_cat = row.get('category', '')
         season = row.get('season', 'Unknown')
         competition = row.get('competition', 'Unknown')
         athlete_name = row.get('athlete', f'Athlete {idx}')
 
-        # Strict Category Matching (Case Insensitive)
         dashboard_cat = None
         for allowed in ALLOWED_CATEGORIES:
             if str(raw_cat).lower() == allowed.lower():
@@ -97,7 +78,6 @@ def load_and_process_data(csv_filename):
         
         if not dashboard_cat: continue
 
-        # Initialize dataset key if new
         dataset_key = (season, competition, dashboard_cat)
         if dataset_key not in datasets:
             is_women = 'Women' in dashboard_cat
@@ -115,7 +95,6 @@ def load_and_process_data(csv_filename):
                                    'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []}}
             }
 
-        # Extract Results
         results = {}
         for cls in ['c1', 'k1', 'x1']:
             if cls in row:
@@ -130,9 +109,8 @@ def load_and_process_data(csv_filename):
 
         total_loaded += 1
 
-        # Determine Type
         count = len(results)
-        type_idx = count - 1 # 0=Single, 1=Double, 2=Triple
+        type_idx = count - 1 
         if type_idx < 0: type_idx = 0
         if type_idx > 2: type_idx = 2
         category_name = ['Single', 'Double', 'Triple'][type_idx]
@@ -176,9 +154,19 @@ def load_and_process_data(csv_filename):
 
     return df, datasets, processed_athletes, total_loaded
 
-# --- 3. LOAD DATA ---
-# Ensure correct filename
-RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data("world_championship_bucket_data.csv")
+# --- 3. LOAD DATA (SMART FALLBACK) ---
+default_filename = "world_championship_bucket_data.csv"
+
+if os.path.exists(default_filename):
+    RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data(default_filename)
+else:
+    st.warning(f"⚠️ '{default_filename}' was not found in the directory. Please upload the file below.")
+    uploaded_file = st.file_uploader("Upload CSV Data", type=['csv'])
+    
+    if uploaded_file is not None:
+        RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data(uploaded_file)
+    else:
+        RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = pd.DataFrame(), {}, [], 0
 
 MAIN_CATEGORIES = [
     'Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', 'Rank 10 - 12', 
@@ -199,19 +187,17 @@ def get_chart_arrays(data_dict, keys):
 st.title("Athlete Bucket Analysis")
 
 if TOTAL_LOADED == 0:
-    st.error("No data loaded. Please ensure 'world_championship_bucket_data.csv' is in the same directory as this script.")
+    st.info("Waiting for data... Please upload your CSV file above if it is not loading automatically.")
     st.stop()
 
-# --- FILTERS ROW 1: Season & Competition ---
+# --- FILTERS ROW 1 ---
 col_season, col_comp, col_cat, col_ath = st.columns(4)
 
 with col_season:
-    # Get unique seasons sorted
-    seasons = sorted(list(set(k[0] for k in DATASETS.keys())))
+    seasons = sorted(list(set(k[0] for k in DATASETS.keys()))) if DATASETS else []
     selected_season = st.selectbox("Season", seasons, index=None, placeholder="Select Season")
 
 with col_comp:
-    # Filter competitions based on selected season
     if selected_season:
         competitions = sorted(list(set(k[1] for k in DATASETS.keys() if k[0] == selected_season)))
     else:
@@ -219,10 +205,8 @@ with col_comp:
     selected_competition = st.selectbox("Competition", competitions, index=None, placeholder="Select Competition")
 
 with col_cat:
-    # Filter categories based on season AND competition
     if selected_season and selected_competition:
         categories = sorted(list(set(k[2] for k in DATASETS.keys() if k[0] == selected_season and k[1] == selected_competition)))
-        # Ensure logical sort order if possible
         order = ["Junior Men", "Junior Women", "U23 Men", "U23 Women", "Senior Men", "Senior Women"]
         sorted_cats = [c for c in order if c in categories] + [c for c in categories if c not in order]
     else:
@@ -231,7 +215,6 @@ with col_cat:
     selected_category = st.selectbox("Category", sorted_cats, index=None, placeholder="Select Category")
 
 with col_ath:
-    # Filter athletes based on Season, Competition, AND Category
     if selected_season and selected_competition and selected_category:
         filtered_athletes = sorted(
             [a for a in ATHLETES if a['season'] == selected_season and a['competition'] == selected_competition and a['category'] == selected_category],
@@ -242,24 +225,24 @@ with col_ath:
     else:
         athlete_map = {}
         options = []
-        
-    selected_name = st.selectbox("Athlete", options, index=None, placeholder="Select Athlete") 
+    
+    # We allow this to be empty now
+    selected_name = st.selectbox("Athlete (Optional)", options, index=None, placeholder="Select to Highlight") 
     selected_athlete = athlete_map.get(selected_name)
 
-# --- 6. CHECK FOR ALL SELECTIONS ---
+# --- 6. CHECK FOR SELECTIONS (UPDATED) ---
 
-# Only proceed if ALL selections are made
-if not (selected_season and selected_competition and selected_category and selected_athlete):
-    st.info("Please select a Season, Competition, Category, and Athlete to view the analysis.")
+# We only require Season, Competition, and Category to show the main chart
+if not (selected_season and selected_competition and selected_category):
+    st.info("Please select a Season, Competition, and Category to view the analysis.")
     st.stop()
 
 # --- 7. DATA SELECTION ---
 
-# Construct key to fetch dataset
 current_key = (selected_season, selected_competition, selected_category)
 
 if current_key not in DATASETS:
-    st.info("No data available for this specific combination.")
+    st.info("No data available for this selection.")
     st.stop()
 
 dataset = DATASETS[current_key]
@@ -285,6 +268,7 @@ hover_templates_s = []
 hover_templates_d = []
 hover_templates_t = []
 
+# If NO athlete is selected, we show the Top Performers list in the hover
 if not selected_athlete:
     for cat in MAIN_CATEGORIES:
         if cat in ['Rank 1 - 3', 'Rank 4 - 6']:
@@ -319,6 +303,7 @@ if not selected_athlete:
             hover_templates_d.append(None)
             hover_templates_t.append(None)
 else:
+    # If an athlete IS selected, we disable standard hovers to focus on the Highlight Annotation
     hover_templates_s = [None] * len(MAIN_CATEGORIES)
     hover_templates_d = [None] * len(MAIN_CATEGORIES)
     hover_templates_t = [None] * len(MAIN_CATEGORIES)
@@ -334,12 +319,12 @@ fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=s2, name='Single', marker_color=c_s
 fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=d2, name='Double', marker_color=c_d, showlegend=False, opacity=0.8, hoverinfo='none'), row=1, col=2)
 fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=t2, name='Triple', marker_color=c_t, showlegend=False, opacity=0.8, hoverinfo='none'), row=1, col=2)
 
-# --- 9. ATHLETE SELECTION HOVER LOGIC ---
+# --- 9. ATHLETE SELECTION HOVER LOGIC (UPDATED) ---
 
+# Only run this highlight logic if an athlete is actually selected
 if selected_athlete:
-    cat_idx = selected_athlete['category_index'] # 0=Single, 1=Double, 2=Triple
+    cat_idx = selected_athlete['category_index'] 
     
-    # Define Colors for Text
     color_map = {0: c_s, 1: c_d, 2: c_t}
     bucket_color = color_map.get(cat_idx, "#000000")
     
@@ -397,17 +382,11 @@ axis_config = dict(
     title_font=dict(color='black', size=14, weight="bold")
 )
 
-# Y-Axis (Left)
 fig.update_yaxes(title_text="Athletes Per Rank Category", title_standoff=40, range=[0, 9.5], dtick=1, row=1, col=1, **axis_config)
-
-# X-Axes
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=1, **axis_config)
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=2, **axis_config)
-
-# Y-Axis (Right) - Fixed Range
 fig.update_yaxes(range=outlier_range, dtick=10, row=1, col=2, side='left', **axis_config)
 
-# Add Centered X-Axis Title
 fig.add_annotation(
     text="Final Rank", xref="paper", yref="paper",
     x=0.5, y=-0.25, 
