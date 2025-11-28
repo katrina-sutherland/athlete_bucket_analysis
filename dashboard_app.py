@@ -41,13 +41,14 @@ def load_and_process_data(csv_file):
         # Clean column names
         df.columns = df.columns.str.strip()
     except FileNotFoundError:
-        return {}, [], 0
+        return pd.DataFrame(), {}, [], 0
 
-    # Clean category column
-    if 'category' in df.columns:
-        df['category'] = df['category'].astype(str).str.strip()
+    # Clean string columns
+    for col in ['season', 'competition', 'category', 'athlete']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
 
-    # Allowed Categories
+    # Define Allowed Categories
     ALLOWED_CATEGORIES = [
         'Junior Men', 'Junior Women',
         'U23 Men', 'U23 Women',
@@ -57,39 +58,46 @@ def load_and_process_data(csv_file):
     COLORS_MEN = ['#475569', '#3b82f6', '#7dd3fc']   # Slate, Blue, Sky
     COLORS_WOMEN = ['#4a144d', '#ce73ce', '#f2d4f2'] # Dark Purple, Orchid, Light Pink
 
-    # Initialize Datasets
+    # Initialize Datasets Structure
+    # Structure: { (Season, Competition, Category): { 'main': ..., 'outlier': ..., 'colors': ..., 'range': ..., 'top_performers': ... } }
     datasets = {}
-    for cat in ALLOWED_CATEGORIES:
-        is_women = 'Women' in cat
-        datasets[cat] = {
-            "main": {
-                'Rank 1 - 3': [0, 0, 0], 'Rank 4 - 6': [0, 0, 0], 'Rank 7 - 9': [0, 0, 0],
-                'Rank 10 - 12': [0, 0, 0], 'Rank 13 - 15': [0, 0, 0], 'Rank 16 - 18': [0, 0, 0],
-                'Rank 19 - 21': [0, 0, 0], 'Rank 22 - 24': [0, 0, 0], 'Rank 25 - 27': [0, 0, 0],
-                'Rank 28 - 30': [0, 0, 0]
-            },
-            "outlier": {'Rank 31 +': [0, 0, 0]},
-            "colors": COLORS_WOMEN if is_women else COLORS_MEN,
-            "range": [0, 10],
-            "top_performers": {'Rank 1 - 3': {'Single': [], 'Double': [], 'Triple': []}, 
-                               'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []}} 
-        }
-
+    
     processed_athletes = []
     total_loaded = 0
 
     # Process Rows
     for idx, row in df.iterrows():
         raw_cat = row.get('category', '')
+        season = row.get('season', 'Unknown')
+        competition = row.get('competition', 'Unknown')
+        athlete_name = row.get('athlete', f'Athlete {idx}')
+
+        # Match CSV category to allowed list
         dashboard_cat = None
-        
         for allowed in ALLOWED_CATEGORIES:
             if str(raw_cat).lower() == allowed.lower():
                 dashboard_cat = allowed
                 break
         
-        if not dashboard_cat: 
-            continue
+        if not dashboard_cat: continue
+
+        # Initialize dataset key if new
+        dataset_key = (season, competition, dashboard_cat)
+        if dataset_key not in datasets:
+            is_women = 'Women' in dashboard_cat
+            datasets[dataset_key] = {
+                "main": {
+                    'Rank 1 - 3': [0, 0, 0], 'Rank 4 - 6': [0, 0, 0], 'Rank 7 - 9': [0, 0, 0],
+                    'Rank 10 - 12': [0, 0, 0], 'Rank 13 - 15': [0, 0, 0], 'Rank 16 - 18': [0, 0, 0],
+                    'Rank 19 - 21': [0, 0, 0], 'Rank 22 - 24': [0, 0, 0], 'Rank 25 - 27': [0, 0, 0],
+                    'Rank 28 - 30': [0, 0, 0]
+                },
+                "outlier": {'Rank 31 +': [0, 0, 0]},
+                "colors": COLORS_WOMEN if is_women else COLORS_MEN,
+                "range": [0, 40] if is_women else [0, 80],
+                "top_performers": {'Rank 1 - 3': {'Single': [], 'Double': [], 'Triple': []}, 
+                                   'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []}}
+            }
 
         # Extract Results
         results = {}
@@ -108,7 +116,7 @@ def load_and_process_data(csv_file):
 
         # Determine Type
         count = len(results)
-        type_idx = count - 1 
+        type_idx = count - 1 # 0=Single, 1=Double, 2=Triple
         if type_idx < 0: type_idx = 0
         if type_idx > 2: type_idx = 2
         category_name = ['Single', 'Double', 'Triple'][type_idx]
@@ -124,15 +132,16 @@ def load_and_process_data(csv_file):
             bucket_text_map[bucket].append(f"<b>{cls}:</b> {rank}")
 
             if bucket not in seen_buckets:
-                target = datasets[dashboard_cat]['outlier'] if bucket == 'Rank 31 +' else datasets[dashboard_cat]['main']
+                target = datasets[dataset_key]['outlier'] if bucket == 'Rank 31 +' else datasets[dataset_key]['main']
                 if bucket in target:
                     target[bucket][type_idx] += 1
                 seen_buckets.add(bucket)
                 
+                # Top Performers Logic
                 if bucket in ['Rank 1 - 3', 'Rank 4 - 6']:
-                    entry_text = f"{row.get('athlete', 'Unknown')}"
-                    if entry_text not in datasets[dashboard_cat]['top_performers'][bucket][category_name]:
-                        datasets[dashboard_cat]['top_performers'][bucket][category_name].append(entry_text)
+                    entry_text = f"{athlete_name}"
+                    if entry_text not in datasets[dataset_key]['top_performers'][bucket][category_name]:
+                        datasets[dataset_key]['top_performers'][bucket][category_name].append(entry_text)
 
         highlights = []
         for b, texts in bucket_text_map.items():
@@ -140,24 +149,19 @@ def load_and_process_data(csv_file):
 
         processed_athletes.append({
             "id": idx,
-            "name": row.get('athlete', f'Athlete {idx}'),
+            "name": athlete_name,
+            "season": season,
+            "competition": competition,
             "category": dashboard_cat,
             "category_index": type_idx,
             "category_name": category_name,
             "highlights": highlights
         })
 
-    # Calculate Y-Axis Ranges
-    for cat, data in datasets.items():
-        if 'Women' in cat:
-            data['range'] = [0, 40]
-        else:
-            data['range'] = [0, 80]
-
-    return datasets, processed_athletes, total_loaded
+    return df, datasets, processed_athletes, total_loaded
 
 # --- 3. LOAD DATA ---
-DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data("2025_wch_buckets.csv")
+RAW_DF, DATASETS, ATHLETES, TOTAL_LOADED = load_and_process_data("2025_wch_buckets.csv")
 
 MAIN_CATEGORIES = [
     'Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', 'Rank 10 - 12', 
@@ -180,22 +184,36 @@ st.title("Athlete Bucket Analysis")
 if TOTAL_LOADED == 0:
     st.warning("No data loaded. Ensure '2025_wch_buckets.csv' is in the directory.")
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    selected_event = st.selectbox("Event", ["2025 World Championships", "2024 World Championships", "2023 World Cup"])
-with col2:
-    if DATASETS:
-        order = ["Junior Men", "Junior Women", "U23 Men", "U23 Women", "Senior Men", "Senior Women"]
-        available = [c for c in order if c in DATASETS]
-        others = [c for c in DATASETS.keys() if c not in order]
-        category_options = available + sorted(others)
-    else:
-        category_options = ["No Data"]
-    
-    selected_category = st.selectbox("Category", category_options)
+# --- FILTERS ROW 1: Season & Competition ---
+col_season, col_comp, col_cat, col_ath = st.columns(4)
 
-with col3:
-    filtered_athletes = sorted([a for a in ATHLETES if a['category'] == selected_category], key=lambda x: x['name'])
+with col_season:
+    # Get unique seasons sorted
+    seasons = sorted(list(set(k[0] for k in DATASETS.keys()))) if DATASETS else ["No Data"]
+    selected_season = st.selectbox("Season", seasons)
+
+with col_comp:
+    # Filter competitions based on selected season
+    competitions = sorted(list(set(k[1] for k in DATASETS.keys() if k[0] == selected_season))) if DATASETS else ["No Data"]
+    selected_competition = st.selectbox("Competition", competitions)
+
+with col_cat:
+    # Filter categories based on season AND competition
+    categories = sorted(list(set(k[2] for k in DATASETS.keys() if k[0] == selected_season and k[1] == selected_competition)))
+    # Ensure logical sort order if possible
+    order = ["Junior Men", "Junior Women", "U23 Men", "U23 Women", "Senior Men", "Senior Women"]
+    sorted_cats = [c for c in order if c in categories] + [c for c in categories if c not in order]
+    
+    if not sorted_cats: sorted_cats = ["No Data"]
+    selected_category = st.selectbox("Category", sorted_cats)
+
+with col_ath:
+    # Filter athletes based on Season, Competition, AND Category
+    filtered_athletes = sorted(
+        [a for a in ATHLETES if a['season'] == selected_season and a['competition'] == selected_competition and a['category'] == selected_category],
+        key=lambda x: x['name']
+    )
+    
     athlete_map = {a["name"]: a for a in filtered_athletes}
     options = ["None"] + list(athlete_map.keys())
     selected_name = st.selectbox("Athlete", options, index=0) 
@@ -203,18 +221,21 @@ with col3:
 
 # --- 6. DATA SELECTION ---
 
-if not DATASETS or selected_category not in DATASETS:
-    st.info("Please upload data or select a valid category.")
+# Construct key to fetch dataset
+current_key = (selected_season, selected_competition, selected_category)
+
+if current_key not in DATASETS:
+    st.info("No data available for this selection.")
     st.stop()
 
-dataset = DATASETS[selected_category]
+dataset = DATASETS[current_key]
 active_main = dataset["main"]
 active_outlier = dataset["outlier"]
 active_colors = dataset["colors"]
 outlier_range = dataset["range"]
 top_performers = dataset["top_performers"]
 
-st.markdown(f"<h2 style='text-align: center; text-decoration: underline; margin: 20px 0; color: black;'>{selected_category} Results {selected_event}</h2>", unsafe_allow_html=True)
+st.markdown(f"<h2 style='text-align: center; text-decoration: underline; margin: 20px 0; color: black;'>{selected_category} Results {selected_season} {selected_competition}</h2>", unsafe_allow_html=True)
 
 # --- 7. PLOTLY CHART ---
 
@@ -237,7 +258,6 @@ if not selected_athlete:
             perf_s = top_performers.get(cat, {}).get('Single', [])
             if perf_s:
                 disp_s = "<br>".join(perf_s[:15]) + ("<br>..." if len(perf_s)>15 else "")
-                # Format: BOLD BLACK Title, colored category label
                 hover_text = f"<span style='color:{c_s}; font-weight:bold; font-size:14px'>SINGLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_s}</span><extra></extra>"
                 hover_templates_s.append(hover_text)
             else:
@@ -287,12 +307,8 @@ if selected_athlete:
     
     # Define Colors for Text
     color_map = {0: c_s, 1: c_d, 2: c_t}
-    # Default to black, but we will use this to color the bucket name
-    text_color = color_map.get(cat_idx, "#000000")
+    bucket_color = color_map.get(cat_idx, "#000000")
     
-    # Calculate Shifts to align hover over SPECIFIC column
-    # Main Chart: Single(-20), Double(0), Triple(20)
-    # Outlier Chart: Single(-30), Double(0), Triple(30) (Wider bars)
     x_shift_val_main = {0: -20, 1: 0, 2: 20}.get(cat_idx, 0)
     x_shift_val_outlier = {0: -40, 1: 0, 2: 40}.get(cat_idx, 0) 
 
@@ -306,8 +322,6 @@ if selected_athlete:
         result_text = highlight['text']
         
         is_outlier = rank_group in OUTLIER_CATEGORIES
-        
-        # IMPORTANT: Only show annotation on the correct COLUMN trace
         target_row, target_col = (1, 2) if is_outlier else (1, 1)
         current_shift = x_shift_val_outlier if is_outlier else x_shift_val_main
         
@@ -315,13 +329,11 @@ if selected_athlete:
             data_source = active_outlier if is_outlier else active_main
             bar_height = data_source[rank_group][cat_idx]
 
-            # UPPERCASE Bucket Name + Color Matching
             bucket_name = selected_athlete['category_name'].upper()
 
             fig.add_annotation(
                 x=rank_group, y=bar_height,
-                # Reordered: BUCKET (Colored) -> Athlete Name (Black) -> Rank Group (Gray) -> Results (Black)
-                text=f"<span style='font-size:12px; font-weight:bold; color:{bucket_name}'>{bucket_name}</span><br>"
+                text=f"<span style='font-size:12px; font-weight:bold; color:{bucket_color}'>{bucket_name}</span><br>"
                      f"<b><span style='color:black'>{selected_athlete['name']}</span></b><br>"
                      f"<span style='font-size:10px; color:#555'>{rank_group}</span><br><br>"
                      f"<span style='color:black'>{result_text}</span>",
@@ -358,7 +370,7 @@ fig.update_yaxes(title_text="Athletes Per Rank Category", title_standoff=40, ran
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=1, **axis_config)
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=2, **axis_config)
 
-# Y-Axis (Right) - Fixed Range
+# Y-Axis (Right)
 fig.update_yaxes(range=outlier_range, dtick=10, row=1, col=2, side='left', **axis_config)
 
 # Add Centered X-Axis Title
