@@ -189,37 +189,53 @@ col_season, col_comp, col_cat, col_ath = st.columns(4)
 
 with col_season:
     # Get unique seasons sorted
-    seasons = sorted(list(set(k[0] for k in DATASETS.keys()))) if DATASETS else ["No Data"]
-    selected_season = st.selectbox("Season", seasons)
+    seasons = sorted(list(set(k[0] for k in DATASETS.keys()))) if DATASETS else []
+    selected_season = st.selectbox("Season", seasons, index=None, placeholder="Select Season")
 
 with col_comp:
     # Filter competitions based on selected season
-    competitions = sorted(list(set(k[1] for k in DATASETS.keys() if k[0] == selected_season))) if DATASETS else ["No Data"]
-    selected_competition = st.selectbox("Competition", competitions)
+    if selected_season:
+        competitions = sorted(list(set(k[1] for k in DATASETS.keys() if k[0] == selected_season)))
+    else:
+        competitions = []
+    selected_competition = st.selectbox("Competition", competitions, index=None, placeholder="Select Competition")
 
 with col_cat:
     # Filter categories based on season AND competition
-    categories = sorted(list(set(k[2] for k in DATASETS.keys() if k[0] == selected_season and k[1] == selected_competition)))
-    # Ensure logical sort order if possible
-    order = ["Junior Men", "Junior Women", "U23 Men", "U23 Women", "Senior Men", "Senior Women"]
-    sorted_cats = [c for c in order if c in categories] + [c for c in categories if c not in order]
+    if selected_season and selected_competition:
+        categories = sorted(list(set(k[2] for k in DATASETS.keys() if k[0] == selected_season and k[1] == selected_competition)))
+        # Ensure logical sort order if possible
+        order = ["Junior Men", "Junior Women", "U23 Men", "U23 Women", "Senior Men", "Senior Women"]
+        sorted_cats = [c for c in order if c in categories] + [c for c in categories if c not in order]
+    else:
+        sorted_cats = []
     
-    if not sorted_cats: sorted_cats = ["No Data"]
-    selected_category = st.selectbox("Category", sorted_cats)
+    selected_category = st.selectbox("Category", sorted_cats, index=None, placeholder="Select Category")
 
 with col_ath:
     # Filter athletes based on Season, Competition, AND Category
-    filtered_athletes = sorted(
-        [a for a in ATHLETES if a['season'] == selected_season and a['competition'] == selected_competition and a['category'] == selected_category],
-        key=lambda x: x['name']
-    )
-    
-    athlete_map = {a["name"]: a for a in filtered_athletes}
-    options = ["None"] + list(athlete_map.keys())
-    selected_name = st.selectbox("Athlete", options, index=0) 
+    if selected_season and selected_competition and selected_category:
+        filtered_athletes = sorted(
+            [a for a in ATHLETES if a['season'] == selected_season and a['competition'] == selected_competition and a['category'] == selected_category],
+            key=lambda x: x['name']
+        )
+        athlete_map = {a["name"]: a for a in filtered_athletes}
+        options = list(athlete_map.keys())
+    else:
+        athlete_map = {}
+        options = []
+        
+    selected_name = st.selectbox("Athlete", options, index=None, placeholder="Select Athlete") 
     selected_athlete = athlete_map.get(selected_name)
 
-# --- 6. DATA SELECTION ---
+# --- 6. CHECK FOR ALL SELECTIONS ---
+
+# Only proceed if ALL selections are made
+if not (selected_season and selected_competition and selected_category and selected_athlete):
+    st.info("Please select a Season, Competition, Category, and Athlete to view the analysis.")
+    st.stop()
+
+# --- 7. DATA SELECTION ---
 
 # Construct key to fetch dataset
 current_key = (selected_season, selected_competition, selected_category)
@@ -237,7 +253,7 @@ top_performers = dataset["top_performers"]
 
 st.markdown(f"<h2 style='text-align: center; text-decoration: underline; margin: 20px 0; color: black;'>{selected_category} Results {selected_season} {selected_competition}</h2>", unsafe_allow_html=True)
 
-# --- 7. PLOTLY CHART ---
+# --- 8. PLOTLY CHART ---
 
 fig = make_subplots(rows=1, cols=2, column_widths=[0.8, 0.2], shared_yaxes=False, horizontal_spacing=0.08)
 
@@ -252,39 +268,11 @@ hover_templates_d = []
 hover_templates_t = []
 
 if not selected_athlete:
-    for cat in MAIN_CATEGORIES:
-        if cat in ['Rank 1 - 3', 'Rank 4 - 6']:
-            # Single
-            perf_s = top_performers.get(cat, {}).get('Single', [])
-            if perf_s:
-                disp_s = "<br>".join(perf_s[:15]) + ("<br>..." if len(perf_s)>15 else "")
-                hover_text = f"<span style='color:{c_s}; font-weight:bold; font-size:14px'>SINGLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_s}</span><extra></extra>"
-                hover_templates_s.append(hover_text)
-            else:
-                hover_templates_s.append(None)
-            
-            # Double
-            perf_d = top_performers.get(cat, {}).get('Double', [])
-            if perf_d:
-                disp_d = "<br>".join(perf_d[:15]) + ("<br>..." if len(perf_d)>15 else "")
-                hover_text = f"<span style='color:{c_d}; font-weight:bold; font-size:14px'>DOUBLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_d}</span><extra></extra>"
-                hover_templates_d.append(hover_text)
-            else:
-                hover_templates_d.append(None)
-
-            # Triple
-            perf_t = top_performers.get(cat, {}).get('Triple', [])
-            if perf_t:
-                disp_t = "<br>".join(perf_t[:15]) + ("<br>..." if len(perf_t)>15 else "")
-                hover_text = f"<span style='color:{c_t}; font-weight:bold; font-size:14px'>TRIPLE</span><br><br><span style='font-size:14px; font-weight:900; color:#000000'>{cat}</span><br><span style='color:#000000'>{disp_t}</span><extra></extra>"
-                hover_templates_t.append(hover_text)
-            else:
-                hover_templates_t.append(None)
-        else:
-            hover_templates_s.append(None)
-            hover_templates_d.append(None)
-            hover_templates_t.append(None)
+    # Logic for when no athlete is selected (though current logic forces selection)
+    # Keeping this in case you revert to optional athlete selection later
+    pass 
 else:
+    # If athlete IS selected (which is now mandatory), disable default hover
     hover_templates_s = [None] * len(MAIN_CATEGORIES)
     hover_templates_d = [None] * len(MAIN_CATEGORIES)
     hover_templates_t = [None] * len(MAIN_CATEGORIES)
@@ -300,7 +288,7 @@ fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=s2, name='Single', marker_color=c_s
 fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=d2, name='Double', marker_color=c_d, showlegend=False, opacity=0.8, hoverinfo='none'), row=1, col=2)
 fig.add_trace(go.Bar(x=OUTLIER_CATEGORIES, y=t2, name='Triple', marker_color=c_t, showlegend=False, opacity=0.8, hoverinfo='none'), row=1, col=2)
 
-# --- 8. ATHLETE SELECTION HOVER LOGIC ---
+# --- 9. ATHLETE SELECTION HOVER LOGIC ---
 
 if selected_athlete:
     cat_idx = selected_athlete['category_index'] # 0=Single, 1=Double, 2=Triple
@@ -344,7 +332,7 @@ if selected_athlete:
         except KeyError:
             pass
 
-# --- 9. FINAL LAYOUT ---
+# --- 10. FINAL LAYOUT ---
 
 fig.update_layout(
     barmode='group', bargap=0.35, bargroupgap=0, height=700,
@@ -370,7 +358,7 @@ fig.update_yaxes(title_text="Athletes Per Rank Category", title_standoff=40, ran
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=1, **axis_config)
 fig.update_xaxes(tickangle=-45, title_standoff=40, row=1, col=2, **axis_config)
 
-# Y-Axis (Right)
+# Y-Axis (Right) - Fixed Range
 fig.update_yaxes(range=outlier_range, dtick=10, row=1, col=2, side='left', **axis_config)
 
 # Add Centered X-Axis Title
