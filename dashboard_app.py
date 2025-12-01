@@ -91,8 +91,13 @@ def load_and_process_data(csv_file):
                 "outlier": {'Rank 31 +': [0, 0, 0]},
                 "colors": COLORS_WOMEN if is_women else COLORS_MEN,
                 "range": [0, 40] if is_women else [0, 80],
-                "top_performers": {'Rank 1 - 3': {'Single': [], 'Double': [], 'Triple': []}, 
-                                   'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []}}
+                # FIX 1: Initialized storage for 7-9 and 10-12
+                "top_performers": {
+                    'Rank 1 - 3': {'Single': [], 'Double': [], 'Triple': []}, 
+                    'Rank 4 - 6': {'Single': [], 'Double': [], 'Triple': []},
+                    'Rank 7 - 9': {'Single': [], 'Double': [], 'Triple': []},
+                    'Rank 10 - 12': {'Single': [], 'Double': [], 'Triple': []}
+                }
             }
 
         results = {}
@@ -131,8 +136,8 @@ def load_and_process_data(csv_file):
                     target[bucket][type_idx] += 1
                 seen_buckets.add(bucket)
                 
-                # Top Performers Logic
-                if bucket in ['Rank 1 - 3', 'Rank 4 - 6']:
+                # FIX 2: Added 7-9 and 10-12 to the allowed list for saving names
+                if bucket in ['Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', 'Rank 10 - 12']:
                     entry_text = f"{athlete_name}"
                     if entry_text not in datasets[dataset_key]['top_performers'][bucket][category_name]:
                         datasets[dataset_key]['top_performers'][bucket][category_name].append(entry_text)
@@ -271,7 +276,8 @@ hover_templates_t = []
 # If NO athlete is selected, we show the Top Performers list in the hover
 if not selected_athlete:
     for cat in MAIN_CATEGORIES:
-        if cat in ['Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', ' Rank 10 - 12']:
+        # FIX 3: Fixed typo (removed space) and added new ranks to condition
+        if cat in ['Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', 'Rank 10 - 12']:
             # Single
             perf_s = top_performers.get(cat, {}).get('Single', [])
             if perf_s:
@@ -393,5 +399,7 @@ fig.add_annotation(
     showarrow=False,
     font=dict(size=16, color="black", weight="bold")
 )
+
+st.plotly_chart(fig, use_container_width=True)
 
 st.plotly_chart(fig, use_container_width=True)
