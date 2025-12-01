@@ -271,7 +271,7 @@ hover_templates_t = []
 # If NO athlete is selected, we show the Top Performers list in the hover
 if not selected_athlete:
     for cat in MAIN_CATEGORIES:
-        if cat in ['Rank 1 - 3', 'Rank 4 - 6']:
+        if cat in ['Rank 1 - 3', 'Rank 4 - 6', 'Rank 7 - 9', ' Rank 10 - 12']:
             # Single
             perf_s = top_performers.get(cat, {}).get('Single', [])
             if perf_s:
